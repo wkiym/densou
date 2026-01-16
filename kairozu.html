@@ -3,426 +3,448 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>配線図エディターβ</title>
+  <title>Lチカ実習：回路設計シミュレーター</title>
   <style>
-    body { font-family: system-ui, sans-serif; margin: 16px; }
-    .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
-    button { padding: 8px 12px; }
-    #stage { border:1px solid #ccc; border-radius:12px; width:100%; max-width:900px; height:460px; }
-    #status { padding: 8px 10px; background:#f6f6f6; border-radius:10px; }
-    .pin { cursor:pointer; }
-    .pin.selected { stroke:#000; stroke-width:3; }
-    .part-label { font-size:14px; user-select:none; }
-    .hint { opacity:0.75; font-size: 12px; }
+    body { font-family: system-ui, sans-serif; margin: 16px; color: #333; max-width: 900px; margin: 0 auto; }
+    h2 { margin-bottom: 5px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+    .desc { font-size: 14px; color: #444; margin-bottom: 15px; line-height: 1.5; }
+    .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom: 10px; }
+    
+    button { padding: 6px 14px; cursor: pointer; background: #0969da; color:white; border:none; border-radius:4px; font-size: 13px; }
+    button:hover { background: #0250bb; }
+    button#clearBtn { background: #d1242f; }
+    button.secondary { background: #6e7781; }
+    button.secondary:hover { background: #57606a; }
+    
+    #stage { border:1px solid #ccc; border-radius:8px; width:100%; height:420px; background: #fafafa; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    
+    #status { 
+      padding: 8px 12px; margin-bottom: 10px;
+      background:#f3f3f3; border-left: 4px solid #888; border-radius:2px; 
+      font-size: 14px; color: #333;
+    }
+    #status.error { background: #fff0f0; border-left-color: #d1242f; color: #b31d28; }
+    #status.warning { background: #fffbe6; border-left-color: #d4b106; color: #5c4d00; }
+    #status.success { background: #f0fff4; border-left-color: #1a7f37; color: #116329; }
 
-    /* 配線の見た目 */
-    .edge { cursor:pointer; }
-    .edge.wire { stroke:#333; stroke-width:4; }
-    .edge.res  { stroke:#333; stroke-width:4; stroke-dasharray:7 6; }
-    .edge.hit { stroke: transparent; stroke-width: 18; } /* クリックしやすくする当たり判定 */
+    /* SVG Elements */
+    .pin { cursor:pointer; transition: r 0.1s; }
+    .pin:hover { r: 10; }
+    .pin.selected { stroke:#0969da; stroke-width:3; fill: #e6f2ff; }
+    
+    .part-label { font-size:13px; user-select:none; font-weight: bold; fill: #444; pointer-events: none; }
+    .pin-label { font-size:11px; user-select:none; fill: #666; pointer-events: none; }
 
-    /* LED */
-    .led-body { stroke:#333; stroke-width:2; }
-    .led-on  { fill: #ffdd66; }  /* 点灯 */
-    .led-off { fill: #ffffff; }  /* 消灯 */
+    /* Wiring */
+    .edge { cursor:pointer; stroke-linecap: round; }
+    .edge.wire { stroke:#333; stroke-width:3; }
+    .edge.res  { stroke:#333; stroke-width:3; stroke-dasharray:6 4; }
+    .edge.hit { stroke: transparent; stroke-width: 16; }
+    
+    .val-label { font-size: 12px; font-family: monospace; fill: #d1242f; font-weight: bold; paint-order: stroke; stroke: rgba(255,255,255,0.9); stroke-width: 3px; pointer-events: none; }
 
-    textarea { width:100%; max-width:900px; height:90px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    details { max-width:900px; }
+    /* LED Styles */
+    .led-body { stroke:#444; stroke-width:1.5; }
+    .led-on  { fill: #ffdd66; filter: drop-shadow(0 0 6px #ffdd66); } 
+    .led-off { fill: #eee; }
+    .led-burnt { fill: #333; }
+
+    /* JSON Area */
+    details { margin-top: 20px; border-top: 1px solid #eee; padding-top: 10px; }
+    summary { font-size: 13px; color: #0969da; cursor: pointer; font-weight: bold; }
+    textarea { width: 100%; height: 80px; font-family: monospace; font-size: 12px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;}
   </style>
 </head>
 <body>
-  <div class="row">
-    <button id="clearBtn">配線を全消去</button>
-    <button id="runBtn">▶ 実行（点滅）</button>
-    <div id="status">端子を2つクリックして接続（線をクリックで WIRE↔RES、SHIFT+クリックで削除）</div>
-  </div>
-  <p class="hint">正解例：GPIO2—(RES)—LED:A、LED:K—(WIRE)—GND</p>
 
-  <svg id="stage" viewBox="0 0 900 460"></svg>
+  <h2>実習：Lチカ回路の設計</h2>
+  
+  <div class="desc">
+    <strong>条件:</strong> ESP32電源電圧=3.3V, 赤色LED順方向電圧(<i>V</i><sub>F</sub>)=2.0V<br>
+    LEDを点滅させるため、適切なピンと抵抗を選んで配線してください。<br>
+    <small>※端子記号: <strong>A</strong>=アノード(プラス極), <strong>K</strong>=カソード(マイナス極)</small>
+    <ul style="margin: 5px 0 0 20px; padding:0;">
+        <li>端子間をクリックして接続。線をクリックして抵抗値を変更 (WIRE ↔ 抵抗)。</li>
+    </ul>
+  </div>
+
+  <div class="row">
+    <button id="runBtn">▶ 電源ON</button>
+    <button id="clearBtn" class="secondary" style="margin-left:auto;">全消去</button>
+  </div>
+  
+  <div id="status">準備完了: 回路を作成してください</div>
+
+  <svg id="stage" viewBox="0 0 800 420"></svg>
 
   <details>
-    <summary>保存 / 復元（JSONコピペ）</summary>
-    <div class="row" style="margin:10px 0;">
-      <button id="exportBtn">エクスポート</button>
-      <button id="importBtn">インポート</button>
+    <summary>回路データの保存/読み込み (JSON)</summary>
+    <div style="margin-top: 5px;">
+        <button id="exportBtn" class="secondary">現在の回路を保存 (Export)</button>
+        <button id="importBtn" class="secondary">データを読み込み (Import)</button>
     </div>
-    <textarea id="jsonBox" placeholder="ここにJSONが入ります（コピペして保存できます）"></textarea>
+    <textarea id="jsonBox" placeholder="ここにJSONデータが表示されます。読み込む場合はここに貼り付けてボタンを押してください。"></textarea>
   </details>
 
 <script>
-/**
- * 目的：
- * - 部品は固定配置（ESP32 / LED）
- * - 端子クリック→端子クリックで接続
- * - 線クリックで種類切替：WIRE <-> RES（抵抗）
- * - 正しく配線されたらLEDが点滅する（Lチカ）
- *
- * 重要な考え方：
- * - 画面が本体ではなく「データ」が本体
- * - connections[] を元に毎回SVGを描き直す
- */
+// --- 設定 & 定数 ---
+const RES_VALUES = [0, 10, 100, 1000, 10000];
+const RES_LABELS = { 0:"WIRE", 10:"10Ω", 100:"100Ω", 1000:"1kΩ", 10000:"10kΩ" };
 
-// ---- 部品定義（固定配置）----
+// 部品定義 (LEDを縦長に変更)
 const parts = [
   {
-    id: "esp32",
-    name: "ESP32",
-    x: 120, y: 120, w: 200, h: 180,
+    id: "esp32", name: "ESP32", x: 60, y: 80, w: 140, h: 260,
     pins: [
-      { name: "GPIO2", dx: 200, dy: 60 },
-      { name: "3V3",   dx: 200, dy: 110 },
-      { name: "GND",   dx: 200, dy: 160 },
+      { name: "3V3",   dx: 140, dy: 60 },
+      { name: "GPIO2", dx: 140, dy: 130 },
+      { name: "GND",   dx: 140, dy: 200 },
     ]
   },
   {
-    id: "led",
-    name: "LED",
-    x: 600, y: 165, w: 160, h: 110,
+    id: "led", name: "LED", x: 400, y: 130, w: 80, h: 140,
     pins: [
-      { name: "A", dx: 0,   dy: 35 }, // Anode
-      { name: "K", dx: 0,   dy: 75 }, // Cathode
+      { name: "A", dx: 40, dy: 20 }, // Top
+      { name: "K", dx: 40, dy: 120 }, // Bottom
     ]
   }
 ];
 
-// ---- 状態（データが真実）----
-/**
- * connections: { id, from, to, kind }
- * kind: "wire" | "res"
- */
-let connections = [];
+// --- 状態管理 ---
+let connections = []; // { id, from, to, ohms }
 let selectedPinId = null;
+let isRunning = false;
+let blinkInterval = null;
+let ledState = "off"; 
 
-// ---- Lチカ実行状態 ----
-let running = false;
-let blinkTimer = null;
-let ledOn = false;
-
-// ---- DOM参照 ----
+// --- DOM取得 ---
 const svg = document.getElementById("stage");
 const statusEl = document.getElementById("status");
 const runBtn = document.getElementById("runBtn");
 const jsonBox = document.getElementById("jsonBox");
 
+// --- イベントリスナー ---
 document.getElementById("clearBtn").addEventListener("click", () => {
-  stopBlink();
+  resetSim();
   connections = [];
   selectedPinId = null;
-  setStatus("配線を全消去しました。端子を2つクリックして接続");
+  setStatus("回路を全消去しました", "");
   render();
 });
 
 document.getElementById("exportBtn").addEventListener("click", () => {
-  const data = { connections };
-  jsonBox.value = JSON.stringify(data, null, 2);
-  setStatus("JSONを出力しました（コピペして保存できます）");
+  const data = { connections: connections };
+  jsonBox.value = JSON.stringify(data);
+  setStatus("回路データをJSONとして出力しました", "");
 });
 
 document.getElementById("importBtn").addEventListener("click", () => {
   try {
-    const data = JSON.parse(jsonBox.value || "{}");
-    if (!Array.isArray(data.connections)) throw new Error("connections が配列ではありません");
-    stopBlink();
-    connections = data.connections
-      .filter(c => c && c.from && c.to && (c.kind === "wire" || c.kind === "res"))
-      .map(c => ({ id: c.id || cryptoId(), from: c.from, to: c.to, kind: c.kind }));
-    selectedPinId = null;
-    setStatus("JSONから復元しました");
-    render();
-  } catch (e) {
-    setStatus("インポート失敗: " + e.message);
+    const val = jsonBox.value.trim();
+    if(!val) return;
+    const data = JSON.parse(val);
+    if(Array.isArray(data.connections)) {
+        resetSim();
+        connections = data.connections;
+        selectedPinId = null;
+        setStatus("回路データを読み込みました", "success");
+        render();
+    } else {
+        throw new Error("Invalid Format");
+    }
+  } catch(e) {
+    setStatus("読み込みエラー: JSON形式が正しくありません", "error");
   }
 });
 
 runBtn.addEventListener("click", () => {
-  if (running) {
-    stopBlink();
-    setStatus("停止しました");
-    render();
+  if (isRunning) {
+    resetSim();
     return;
   }
-  const check = checkCircuitForBlink();
-  if (!check.ok) {
-    setStatus("実行できません: " + check.reason);
+  
+  const result = analyzeCircuit();
+  
+  if (!result.connected) {
+    setStatus("回路が不完全です (電源からGNDまで通電していません)", "error");
     return;
   }
-  startBlink();
-  setStatus("実行中: 正しく配線されています（LED点滅）");
+
+  // 短絡チェック
+  if (result.totalResistance <= 0) {
+    startBurnout();
+    setStatus("短絡(ショート)しています。抵抗を入れてください", "error");
+    return;
+  }
+
+  // 電流計算 (3.3V電源, Vf=2.0V)
+  const V_source = 3.3;
+  const V_f = 2.0;
+  const I_ma = ((V_source - V_f) / result.totalResistance) * 1000;
+
+  startBlink(I_ma, result.sourcePin);
 });
 
-// ---- ユーティリティ ----
-function setStatus(msg) { statusEl.textContent = msg; }
-function cryptoId() {
-  // 依存なしでそこそこユニーク
-  return "e_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
+// --- シミュレーション制御 ---
+function resetSim() {
+  isRunning = false;
+  ledState = "off";
+  if (blinkInterval) clearInterval(blinkInterval);
+  runBtn.textContent = "▶ 電源ON";
+  setStatus("停止中", "");
+  render();
 }
-function pinId(partId, pinName) { return `${partId}:${pinName}`; }
-function parsePinId(id) {
-  const [pid, pname] = id.split(":");
-  return { pid, pname };
-}
-function getPart(partId) { return parts.find(p => p.id === partId); }
-function getPin(part, pinName) { return part.pins.find(p => p.name === pinName); }
 
-function getPinPos(pinIdStr) {
-  const { pid, pname } = parsePinId(pinIdStr);
-  const part = getPart(pid);
-  const pin = getPin(part, pname);
+function setStatus(msg, type) {
+  statusEl.textContent = msg;
+  statusEl.className = type; 
+}
+
+function startBurnout() {
+  isRunning = true;
+  ledState = "burnt";
+  runBtn.textContent = "■ リセット";
+  render();
+}
+
+function startBlink(current_ma, sourcePin) {
+  isRunning = true;
+  runBtn.textContent = "■ 電源OFF";
+  
+  let msg = `電流値: ${current_ma.toFixed(1)} mA`;
+  let type = "";
+  let allowBlink = true;
+
+  // 1. ピン判定
+  if (sourcePin === "3V3") {
+    msg += " (警告: 3V3接続のため制御不可。GPIOを使用してください)";
+    type = "warning";
+    allowBlink = false;
+    ledState = "on"; 
+  }
+  
+  // 2. 電流判定
+  if (current_ma > 25) {
+    msg += " [過大] 素子が破損しました (抵抗値不足)";
+    ledState = "burnt";
+    type = "error";
+    setStatus(msg, type);
+    render();
+    return;
+  } else if (current_ma < 2.0) {
+    msg += " [不足] 点灯しません (抵抗値過大)";
+    type = "error";
+    ledState = "off";
+    if(type !== "error") setStatus(msg, type); 
+  } else {
+    if (sourcePin === "GPIO") {
+        msg += " [適正] 正常動作中";
+        type = "success";
+    }
+  }
+
+  setStatus(msg, type);
+
+  if (allowBlink && current_ma >= 2.0) {
+      let on = false;
+      blinkInterval = setInterval(() => {
+        on = !on;
+        ledState = on ? "on" : "off";
+        render();
+      }, 500);
+  } else {
+      render();
+  }
+}
+
+// --- 回路解析 ---
+function analyzeCircuit() {
+  const P_3V3  = "esp32:3V3";
+  const P_GPIO = "esp32:GPIO2";
+  const P_GND  = "esp32:GND";
+  const P_A    = "led:A";
+  const P_K    = "led:K";
+
+  // 隣接リスト作成
+  const adj = {};
+  const getAdj = (id) => { if(!adj[id]) adj[id]=[]; return adj[id]; };
+  connections.forEach(c => {
+    getAdj(c.from).push({ to: c.to, r: c.ohms });
+    getAdj(c.to).push({ to: c.from, r: c.ohms });
+  });
+
+  const findPath = (start, end) => {
+    const q = [{ curr: start, r: 0, path: [start] }];
+    const visited = new Set(); // ループ回避
+    while(q.length > 0) {
+      const { curr, r, path } = q.shift();
+      if (curr === end) return { found: true, r };
+      
+      visited.add(curr);
+      for(const n of (adj[curr]||[])) {
+        if(!visited.has(n.to)) {
+          q.push({ curr: n.to, r: r + n.r, path: [...path, n.to] });
+        }
+      }
+    }
+    return { found: false, r: 0 };
+  };
+
+  // GNDへのパス確認
+  const gndPath = findPath(P_K, P_GND);
+  if (!gndPath.found) return { connected: false };
+
+  // 電源(GPIO or 3V3)からのパス確認
+  const gpioPath = findPath(P_GPIO, P_A);
+  if (gpioPath.found) {
+    return { connected: true, sourcePin: "GPIO", totalResistance: gpioPath.r + gndPath.r };
+  }
+  
+  const v33Path = findPath(P_3V3, P_A);
+  if (v33Path.found) {
+    return { connected: true, sourcePin: "3V3", totalResistance: v33Path.r + gndPath.r };
+  }
+
+  return { connected: false };
+}
+
+// --- 描画処理 ---
+function pinId(partId, pinName) { return `${partId}:${pinName}`; }
+function parsePinId(id) { const [pid, pname] = id.split(":"); return { pid, pname }; }
+function getPinPos(id) {
+  const { pid, pname } = parsePinId(id);
+  const part = parts.find(p => p.id === pid);
+  const pin = part.pins.find(p => p.name === pname);
   return { x: part.x + pin.dx, y: part.y + pin.dy };
 }
+function cryptoId() { return Math.random().toString(36).slice(2); }
 
-// ---- 端子クリック処理 ----
 function onPinClick(e) {
-  const id = e.currentTarget.getAttribute("data-pin-id");
+  if (isRunning) return; 
+  const id = e.currentTarget.getAttribute("data-id");
+  if (!selectedPinId) { selectedPinId = id; render(); return; }
+  if (selectedPinId === id) { selectedPinId = null; render(); return; }
 
-  if (!selectedPinId) {
-    selectedPinId = id;
-    setStatus(`${id} を選択中 → もう1つ端子をクリック`);
-    render();
-    return;
-  }
-  if (selectedPinId === id) {
-    selectedPinId = null;
-    setStatus("選択解除。端子を2つクリックして接続");
-    render();
-    return;
-  }
-
-  // 2回目：接続追加（重複は弾く）
-  const a = selectedPinId;
-  const b = id;
-  const key = [a, b].sort().join("~");
-  const exists = connections.some(c => [c.from, c.to].sort().join("~") === key);
-  if (!exists) {
-    connections.push({ id: cryptoId(), from: a, to: b, kind: "wire" });
-  } else {
-    setStatus("その2点は既に接続されています（線をクリックして種類変更できます）");
-  }
-
+  const exists = connections.some(c => 
+    (c.from === selectedPinId && c.to === id) || (c.from === id && c.to === selectedPinId)
+  );
+  if (!exists) connections.push({ id: cryptoId(), from: selectedPinId, to: id, ohms: 0 });
   selectedPinId = null;
   render();
 }
 
-// ---- 線クリック処理（切替/削除）----
 function onEdgeClick(e) {
-  const edgeId = e.currentTarget.getAttribute("data-edge-id");
-  const idx = connections.findIndex(c => c.id === edgeId);
+  if (isRunning) return;
+  const id = e.currentTarget.getAttribute("data-id");
+  const idx = connections.findIndex(c => c.id === id);
   if (idx < 0) return;
 
-  // SHIFTで削除
   if (e.shiftKey) {
-    stopBlink();
     connections.splice(idx, 1);
-    setStatus("配線を削除しました");
-    render();
-    return;
+  } else {
+    const currentR = connections[idx].ohms;
+    const i = RES_VALUES.indexOf(currentR);
+    connections[idx].ohms = RES_VALUES[(i + 1) % RES_VALUES.length];
   }
-
-  // 種類切替
-  stopBlink();
-  connections[idx].kind = (connections[idx].kind === "wire") ? "res" : "wire";
-  setStatus(`配線の種類を ${connections[idx].kind.toUpperCase()} に変更しました（SHIFT+クリックで削除）`);
   render();
 }
 
-// ---- 回路チェック（Lチカできるか）----
-/**
- * ここは「全パターン保存」を避ける肝：
- * - wire だけで “同じ導体(ネット)” を作る（Union-Find）
- * - res はネットを結合しない（別ネット間をつなぐ部品）
- *
- * 最小のLチカ条件（このページのルール）：
- * 1) LED:K が ESP32:GND と wire で同じネット
- * 2) ESP32:GPIO2 と LED:A の間に res 接続が1本ある（直結wireはNG）
- */
-function checkCircuitForBlink() {
-  const GPIO = pinId("esp32", "GPIO2");
-  const GND  = pinId("esp32", "GND");
-  const LEDA = pinId("led", "A");
-  const LEDK = pinId("led", "K");
-
-  // Union-Find（wireのみ）
-  const uf = new UnionFind(listAllPins());
-  for (const c of connections) {
-    if (c.kind === "wire") uf.union(c.from, c.to);
-  }
-
-  const sameNet = (a,b) => uf.find(a) === uf.find(b);
-
-  // 直結wireを禁止（GPIO2とLEDAがwireで同ネットなら危険扱い）
-  if (sameNet(GPIO, LEDA)) {
-    return { ok:false, reason:"GPIO2 と LED:A が WIRE で直結されています（RES にしてください）" };
-  }
-
-  // LEDK-GNDはwire同ネットが必要
-  if (!sameNet(LEDK, GND)) {
-    return { ok:false, reason:"LED:K と GND が WIRE でつながっていません" };
-  }
-
-  // GPIO2-LEDAはres接続が必要（1本以上ならOKにする）
-  const hasRes = connections.some(c => c.kind === "res" && samePair(c.from, c.to, GPIO, LEDA));
-  if (!hasRes) {
-    return { ok:false, reason:"GPIO2 と LED:A の間に RES（抵抗）がありません" };
-  }
-
-  return { ok:true, reason:"OK" };
-}
-
-function samePair(a1, b1, a2, b2) {
-  // 無向グラフの同一辺判定
-  return (a1 === a2 && b1 === b2) || (a1 === b2 && b1 === a2);
-}
-
-function listAllPins() {
-  const out = [];
-  for (const part of parts) for (const p of part.pins) out.push(pinId(part.id, p.name));
-  return out;
-}
-
-class UnionFind {
-  constructor(items) {
-    this.parent = new Map();
-    this.rank = new Map();
-    for (const it of items) {
-      this.parent.set(it, it);
-      this.rank.set(it, 0);
-    }
-  }
-  find(x) {
-    const p = this.parent.get(x);
-    if (p === x) return x;
-    const r = this.find(p);
-    this.parent.set(x, r);
-    return r;
-  }
-  union(a, b) {
-    const ra = this.find(a), rb = this.find(b);
-    if (ra === rb) return;
-    const rka = this.rank.get(ra), rkb = this.rank.get(rb);
-    if (rka < rkb) this.parent.set(ra, rb);
-    else if (rka > rkb) this.parent.set(rb, ra);
-    else { this.parent.set(rb, ra); this.rank.set(ra, rka + 1); }
-  }
-}
-
-// ---- 点滅制御 ----
-function startBlink() {
-  running = true;
-  runBtn.textContent = "■ 停止";
-  ledOn = false;
-  if (blinkTimer) clearInterval(blinkTimer);
-  blinkTimer = setInterval(() => {
-    // 実行中に配線が崩れたら自動停止
-    const check = checkCircuitForBlink();
-    if (!check.ok) {
-      stopBlink();
-      setStatus("配線が崩れたので停止: " + check.reason);
-      render();
-      return;
-    }
-    ledOn = !ledOn;
-    render(); // LED描画更新
-  }, 400);
-}
-
-function stopBlink() {
-  running = false;
-  runBtn.textContent = "▶ 実行（点滅）";
-  ledOn = false;
-  if (blinkTimer) { clearInterval(blinkTimer); blinkTimer = null; }
-}
-
-// ---- 描画 ----
 function render() {
   svg.innerHTML = "";
 
-  // 1) 配線（下層）
-  for (const c of connections) {
+  // 1. 部品描画
+  parts.forEach(p => {
+    // 本体
+    svg.appendChild(el("rect", { 
+      x:p.x, y:p.y, width:p.w, height:p.h, rx:4, fill:"#fff", stroke:"#888", "stroke-width":2 
+    }));
+    const label = el("text", { x:p.x+8, y:p.y+20, class:"part-label" });
+    label.textContent = p.name;
+    svg.appendChild(label);
+
+    // LED描画 (中央配置)
+    if (p.id === "led") {
+        const cx = p.x + p.w/2;
+        const cy = p.y + p.h/2; 
+        let fillClass = "led-off";
+        if (ledState === "on") fillClass = "led-on";
+        if (ledState === "burnt") fillClass = "led-burnt";
+        svg.appendChild(el("circle", { cx, cy, r:25, class:`led-body ${fillClass}` }));
+    }
+  });
+
+  // 2. 配線描画
+  connections.forEach(c => {
     const p1 = getPinPos(c.from);
     const p2 = getPinPos(c.to);
-
-    // 本体線
-    const line = el("line", {
-      x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y,
-      class: `edge ${c.kind}`,
-      "data-edge-id": c.id
-    });
-    line.addEventListener("click", onEdgeClick);
+    const isWire = (c.ohms === 0);
+    
+    const line = el("line", { x1:p1.x, y1:p1.y, x2:p2.x, y2:p2.y, class: isWire ? "edge wire" : "edge res" });
     svg.appendChild(line);
-
-    // 当たり判定（透明太線）
-    const hit = el("line", {
-      x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y,
-      class: "edge hit",
-      "data-edge-id": c.id
-    });
+    
+    const hit = el("line", { x1:p1.x, y1:p1.y, x2:p2.x, y2:p2.y, class:"edge hit", "data-id":c.id });
     hit.addEventListener("click", onEdgeClick);
     svg.appendChild(hit);
 
-    // ラベル（WIRE/RES）
-    const midx = (p1.x + p2.x) / 2;
-    const midy = (p1.y + p2.y) / 2;
-    const t = el("text", { x: midx + 6, y: midy - 6, "font-size": 12 });
-    t.textContent = c.kind.toUpperCase();
-    svg.appendChild(t);
-  }
-
-  // 2) 部品
-  for (const part of parts) {
-    const rect = el("rect", {
-      x: part.x, y: part.y, width: part.w, height: part.h,
-      rx: 14, fill: "#f6f6f6", stroke: "#aaa"
-    });
-    svg.appendChild(rect);
-
-    const label = el("text", { x: part.x + 12, y: part.y + 24, class: "part-label" });
-    label.textContent = part.name;
-    svg.appendChild(label);
-
-    // LED本体（光る）
-    if (part.id === "led") {
-      const cx = part.x + part.w * 0.65;
-      const cy = part.y + part.h * 0.55;
-      const led = el("circle", {
-        cx, cy, r: 26,
-        class: `led-body ${ledOn ? "led-on" : "led-off"}`
-      });
-      svg.appendChild(led);
-
-      const txt = el("text", { x: cx - 14, y: cy + 6, "font-size": 14 });
-      txt.textContent = "LED";
+    if (!isWire) {
+      const mx = (p1.x + p2.x)/2;
+      const my = (p1.y + p2.y)/2 - 8; 
+      const txt = el("text", { x:mx, y:my, class:"val-label", "text-anchor":"middle" });
+      txt.textContent = RES_LABELS[c.ohms];
       svg.appendChild(txt);
     }
+  });
 
-    // 端子
-    for (const pin of part.pins) {
-      const id = pinId(part.id, pin.name);
-      const cx = part.x + pin.dx;
-      const cy = part.y + pin.dy;
-
-      const circle = el("circle", {
-        cx, cy, r: 9,
-        fill: "#fff", stroke: "#333",
-        class: "pin" + (selectedPinId === id ? " selected" : ""),
-        "data-pin-id": id
+  // 3. ピン描画
+  parts.forEach(p => {
+    p.pins.forEach(pin => {
+      const pid = pinId(p.id, pin.name);
+      const pos = getPinPos(pid);
+      const isSel = (selectedPinId === pid);
+      
+      const pinG = el("g", {});
+      const circle = el("circle", { 
+        cx:pos.x, cy:pos.y, r:6, 
+        class: "pin" + (isSel ? " selected" : ""),
+        fill: "#fff", stroke: "#333", "stroke-width":2,
+        "data-id": pid 
       });
       circle.addEventListener("click", onPinClick);
-      svg.appendChild(circle);
+      pinG.appendChild(circle);
+      
+      // ピンラベル制御: 配線がつながっていたら非表示にする
+      const isConnected = connections.some(c => c.from === pid || c.to === pid);
+      
+      if (!isConnected) {
+          let tx = pos.x + 10;
+          let ty = pos.y + 4;
+          let anchor = "start";
+          
+          if (p.id === "esp32") {
+              tx = pos.x - 12;
+              anchor = "end";
+          } else if (p.id === "led") {
+              // 縦配置なので横にラベルを出す
+              tx = pos.x + 12;
+              anchor = "start";
+          }
 
-      const t = el("text", { x: cx + 14, y: cy + 5, "font-size": 12 });
-      t.textContent = pin.name;
-      svg.appendChild(t);
-    }
-  }
+          const txt = el("text", { x:tx, y:ty, class:"pin-label", "text-anchor":anchor });
+          txt.textContent = pin.name;
+          pinG.appendChild(txt);
+      }
+      
+      svg.appendChild(pinG);
+    });
+  });
 }
 
-function el(tag, attrs = {}) {
-  const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
-  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, String(v));
-  return node;
+function el(tag, attrs) {
+  const n = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for(const k in attrs) n.setAttribute(k, attrs[k]);
+  return n;
 }
 
-// 初期描画
 render();
 </script>
 </body>
